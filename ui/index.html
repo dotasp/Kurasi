@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kurasi</title>
+<link rel="icon" href="data:,">
+<script>
+/* The backend serves this page at "/" and the other UI files under "/ui/". When the page is
+   opened as /ui/index.html (or straight from disk) the files sit next to it already. Every
+   tag with a relative URL is written from here, after the base is known, so the browser
+   never asks for a file at the wrong path. */
+(function(){var p=location.pathname;var b=location.protocol!=='file:'&&!/\/ui\/(index\.html)?$/i.test(p)?'/ui/':'';window.KURASI_BASE=b;
+ if(b)document.write('<base href="'+b+'">');document.write('<link rel="stylesheet" href="'+b+'app.css">');
+ try{var t=localStorage.getItem('kurasi.theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;}catch(e){}})();
+</script>
+</head>
+<body>
+<div id="splash" class="splash" aria-label="Kurasi is starting">
+  <script>document.write('<img src="'+window.KURASI_BASE+'assets/splash.jpg" alt="">');</script>
+  <div class="sbar"><b>Kurasi</b><span id="splashStatus">Starting</span></div>
+</div>
+<div id="desk">
+<div id="app">
+  <div class="narrow">The window is narrow, so the filter pane is hidden. Widen the window to show it.</div>
+  <div class="menubar" id="menubar-row">
+    <div class="mbs" id="menubar"></div>
+    <span class="proj" id="projname">No project</span>
+    <span class="muted modebadge" id="modebadge"></span>
+  </div>
+  <div class="toolbar">
+    <div class="search" id="searchbox">
+      <span class="ic">&#x1F50D;&#xFE0E;</span>
+      <input id="q" type="search" placeholder="Search references, authors, tags and highlights" autocomplete="off" aria-label="Search">
+      <button class="clr" id="qclr" title="Clear the search" hidden>&#x2715;</button>
+    </div>
+    <div class="sort" id="sortbox">
+      <label for="sortsel">Sort by</label>
+      <select class="sel" id="sortsel">
+        <option value="relevance">Relevance</option>
+        <option value="added">Date added</option>
+        <option value="alpha">Alphabetical</option>
+      </select>
+    </div>
+  </div>
+  <div class="tabstrip" id="tabstrip"></div>
+  <div class="workspace">
+    <aside id="filter" aria-label="Filters"></aside>
+    <main id="main"></main>
+    <aside id="right" hidden aria-label="Right pane"></aside>
+  </div>
+  <div class="statusbar" id="statusbar"></div>
+</div>
+</div>
+<div id="tour" hidden>
+  <div class="tblk" id="tb0"></div><div class="tblk" id="tb1"></div><div class="tblk" id="tb2"></div><div class="tblk" id="tb3"></div>
+  <div class="tring" id="tring"></div>
+  <div class="coach" id="coach"></div>
+</div>
+<div class="toasts" id="toasts"></div>
+<script>
+(function(){var b=window.KURASI_BASE,files=['graph_worker.js','app.js','viewer.js','dialogs.js','tour.js'];
+ /* the development fake API loads only with ?fake=1 */
+ if(/[?&]fake=1(&|$)/.test(location.search))files.unshift('dev/fake_api.js');
+ files.forEach(function(f){document.write('<script src="'+b+f+'"><\/script>');});
+ document.write('<script>init();<\/script>');})();
+</script>
+</body>
+</html>

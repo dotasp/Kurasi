@@ -1,0 +1,33 @@
+[package]
+name = "kurasi-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Kurasi HTTP API (axum, CONTRACT.md section 6) and MCP server (rmcp, section 7)"
+
+[lib]
+name = "kurasi_server"
+path = "src/lib.rs"
+
+[dependencies]
+kurasi-core = { path = "../kurasi-core" }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query", "matched-path"] }
+tokio = { version = "1.40", features = ["full"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs", "set-header", "compression-gzip"] }
+http = "1"
+http-body-util = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+rmcp = { version = "3.5", features = ["server", "transport-io", "macros"] }
+schemars = "1"
+tracing = { version = "0.1", features = ["log"] }
+thiserror = "2.0"
+percent-encoding = "2.3"
+
+[dev-dependencies]
+tempfile = "3.10"
+image = { version = "0.25", default-features = false, features = ["png"] }
+flate2 = "1"

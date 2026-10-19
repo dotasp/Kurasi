@@ -1,0 +1,32 @@
+[package]
+name = "kurasi-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Kurasi core: project storage, scanner, search, sidecar, exports and the sterile sample project"
+
+[lib]
+name = "kurasi_core"
+path = "src/lib.rs"
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+sha2 = "0.10"
+notify = "8.0"
+notify-debouncer-full = "0.5"
+tokio = { version = "1.40", features = ["sync"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+thiserror = "2.0"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+rand = "0.8"
+regex = "1.10"
+unicode-normalization = "0.1"
+log = "0.4"
+
+[dev-dependencies]
+anyhow = "1.0"
+tempfile = "3.10"

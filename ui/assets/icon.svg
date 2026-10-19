@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Kurasi entry point icon. Square 1024 canvas, safe at 16 px: a page with one yellow highlight. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3B4F8C"/>
+      <stop offset="1" stop-color="#1E2A4F"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFD83D"/>
+      <stop offset="1" stop-color="#FFC107"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Fluent tile -->
+  <rect x="0" y="0" width="1024" height="1024" rx="224" fill="url(#bg)"/>
+
+  <!-- Page with folded corner -->
+  <g filter="url(#shadow)">
+    <path d="M292 160 H612 L732 280 V864 Q732 896 700 896 H292 Q260 896 260 864 V192 Q260 160 292 160 Z" fill="#FFFFFF"/>
+    <path d="M612 160 V248 Q612 280 644 280 H732 Z" fill="#D6DCEC"/>
+  </g>
+
+  <!-- Text lines -->
+  <g fill="#B9C1D6">
+    <rect x="332" y="352" width="248" height="40" rx="20"/>
+    <rect x="332" y="440" width="328" height="40" rx="20"/>
+    <rect x="332" y="616" width="328" height="40" rx="20"/>
+    <rect x="332" y="704" width="196" height="40" rx="20"/>
+  </g>
+
+  <!-- Highlight mark over the third line -->
+  <rect x="316" y="508" width="360" height="76" rx="16" fill="url(#mark)"/>
+  <rect x="332" y="528" width="328" height="40" rx="20" fill="#5A4A10" opacity="0.55"/>
+
+  <!-- Bookmark ribbon -->
+  <path d="M780 120 H880 V420 L830 376 L780 420 Z" fill="#E8503A"/>
+</svg>

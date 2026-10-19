@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+target/
+/release/
+src-tauri/gen/
+src-tauri/resources/pdfium.dll
+ui/dev/shots/
+*.log
+node_modules/
+.kurasi-test/
+crates/kurasi-core/tests/forbidden_words.local.txt

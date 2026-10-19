@@ -1,0 +1,25 @@
+[package]
+name = "kurasi-pdf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "PDF access for Kurasi through pdfium: render, words, highlight annotations, rotate, save"
+
+[dependencies]
+# The backend trait this crate implements. kurasi-core never depends on this crate.
+kurasi-core = { path = "../kurasi-core" }
+serde_json = "1"
+# Default features: dynamic binding to pdfium.dll, image 0.25 bridge, thread_safe mutex.
+pdfium-render = "0.9"
+# Patches the annotation fields that pdfium-render has no setter for (/NM) and reads
+# annotation dictionaries exactly as written.
+lopdf = "0.45"
+image = { version = "0.25", default-features = false, features = ["png"] }
+uuid = { version = "1", features = ["v4"] }
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
+serde = { version = "1", features = ["derive"] }

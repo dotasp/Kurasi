@@ -1,0 +1,69 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Kurasi",
+  "identifier": "id.dotasp.kurasi",
+  "build": {
+    "frontendDist": "gen/ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Kurasi",
+        "url": "about:blank",
+        "visible": false,
+        "width": 1600,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 600,
+        "center": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' http://127.0.0.1:* http://localhost:* ipc: http://ipc.localhost; img-src 'self' data: blob: http://127.0.0.1:* http://localhost:*; style-src 'self' 'unsafe-inline' http://127.0.0.1:* http://localhost:*; script-src 'self' http://127.0.0.1:* http://localhost:*; worker-src 'self' blob: http://127.0.0.1:* http://localhost:*; connect-src 'self' http://127.0.0.1:* http://localhost:* ipc: http://ipc.localhost; font-src 'self' data: http://127.0.0.1:* http://localhost:*",
+      "capabilities": ["main"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "dotasp",
+    "copyright": "Copyright 2026 Dimas Prameshwara",
+    "license": "MIT",
+    "licenseFile": "../LICENSE",
+    "shortDescription": "Kurasi reference curation",
+    "longDescription": "Kurasi scans a project folder, shows the files as a catalogue, lets a person highlight PDFs, Markdown and images with an analysis per highlight, and exposes the same data to an AI agent through an MCP server.",
+    "category": "Productivity",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "resources/pdfium.dll": "pdfium.dll",
+      "resources/pdfium-licenses/": "licenses/pdfium/",
+      "gen/ui/": "ui/",
+      "installer/README.txt": "README.txt",
+      "../LICENSE": "LICENSE.txt",
+      "installer/THIRD_PARTY_LICENSES.txt": "THIRD_PARTY_LICENSES.txt"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper",
+        "silent": true
+      },
+      "allowDowngrades": true,
+      "nsis": {
+        "template": "installer/installer.nsi",
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico",
+        "languages": ["English"],
+        "compression": "lzma",
+        "displayLanguageSelector": false
+      }
+    }
+  }
+}

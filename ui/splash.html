@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kurasi</title>
+<style>
+/* Splash window (960 x 600, frameless). The image is the only thing above the bar.
+   Tauri 2: the backend emits "splash-status" {text} while it starts and "splash-error" {text} when
+   the start fails; the Retry and Quit buttons invoke the splash_retry and splash_quit commands.
+   pywebview: the backend updates the status line through evaluate_js("setStatus(...)"). */
+:root{--bar-bg:rgba(16,20,26,.78);--bar-fg:#f2f2f2;--bar-fg-2:#c4c8cd;--err:#ff99a4;--font:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif}
+html,body{height:100%;margin:0;background:#10141a;overflow:hidden}
+body{font:13px/1.4 var(--font);color:var(--bar-fg)}
+.img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;user-select:none;-webkit-user-drag:none}
+.sbar{position:absolute;left:0;right:0;bottom:0;height:30px;display:flex;align-items:center;gap:14px;padding:0 14px;background:var(--bar-bg);backdrop-filter:blur(6px);white-space:nowrap;overflow:hidden}
+.sbar b{font-weight:600;letter-spacing:.02em}
+.sbar span{color:var(--bar-fg-2);overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+body.err .sbar span{color:var(--err)}
+.acts{display:none;gap:8px;flex:none}
+body.err .acts{display:flex}
+.acts button{height:22px;padding:0 12px;border:1px solid rgba(255,255,255,.35);border-radius:4px;background:rgba(255,255,255,.1);color:var(--bar-fg);font:12px var(--font);cursor:default}
+.acts button:hover{background:rgba(255,255,255,.2)}
+.acts button.pri{background:#4cc2ff;border-color:transparent;color:#001525}
+</style>
+</head>
+<body>
+<img class="img" src="assets/splash.jpg" alt="">
+<div class="sbar"><b>Kurasi</b><span id="status">Starting</span>
+  <div class="acts"><button class="pri" id="retry" type="button">Retry</button><button id="quit" type="button">Quit</button></div></div>
+<script>
+'use strict';
+(function(){
+var text=function(v){if(v==null)return '';if(typeof v==='string')return v;if(typeof v==='object'&&'text' in v)return String(v.text==null?'':v.text);return String(v);};
+/* pywebview path, kept as the fallback when __TAURI__ is absent */
+window.setStatus=function(t){var s=document.getElementById('status');if(s)s.textContent=text(t);document.body.classList.remove('err');};
+window.setError=function(t){var s=document.getElementById('status');if(s)s.textContent=text(t)||'Kurasi could not start.';document.body.classList.add('err');};
+/* dev only: ?fake=1 plays a start with an error, so the layout can be checked without the shell */
+if(/[?&]fake=1(&|$)/.test(location.search)&&!window.__TAURI__){var calls=[];window.__tauri=calls;var handlers={};
+ window.__TAURI__={event:{listen:function(n,f){handlers[n]=f;return Promise.resolve(function(){delete handlers[n];});},emit:function(){return Promise.resolve();}},core:{invoke:function(c){calls.push(c);return Promise.resolve(null);}}};
+ var fire=function(n,p){if(handlers[n])handlers[n]({event:n,payload:p});};
+ setTimeout(function(){fire('splash-status',{text:'Opening Reading room'});},300);setTimeout(function(){fire('splash-status',{text:'Loading references'});},900);
+ setTimeout(function(){fire('splash-error',{text:'The project folder D:\\Papers\\Reading room is unreachable.'});},1500);}
+var T=window.__TAURI__;
+/* Tauri injects window.__TAURI__ only when tauri.conf.json sets app.withGlobalTauri to true */
+if(T&&T.event&&typeof T.event.listen==='function'){
+ T.event.listen('splash-status',function(e){window.setStatus(e&&e.payload);});
+ T.event.listen('splash-error',function(e){window.setError(e&&e.payload);});
+ var invoke=function(cmd){if(T.core&&typeof T.core.invoke==='function'){try{Promise.resolve(T.core.invoke(cmd)).catch(function(){});}catch(err){}}};
+ document.getElementById('retry').addEventListener('click',function(){window.setStatus('Starting again');invoke('splash_retry');});
+ document.getElementById('quit').addEventListener('click',function(){invoke('splash_quit');});
+}
+})();
+</script>
+</body>
+</html>
