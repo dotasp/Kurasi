@@ -1,4 +1,4 @@
-Kurasi 0.4.0
+Kurasi 0.4.1
 
 Start Kurasi
   Double-click kurasi.exe, or run from a terminal:

@@ -9,8 +9,8 @@
 //! left and y growing downwards, the frame PyMuPDF reports and the contract uses.
 
 use std::collections::BTreeMap;
-use std::path::Path;
-use std::sync::OnceLock;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -110,8 +110,9 @@ pub struct AnnotSnapshot {
     pub extra: serde_json::Value,
 }
 
-/// An open document. Writes stay in memory until `save_in_place`.
-pub trait PdfDoc {
+/// An open document. Writes stay in memory until `save_in_place`. `Send`, so a document opened
+/// for one request can wait in a [`DocCache`] for the next.
+pub trait PdfDoc: Send {
     fn page_count(&self) -> usize;
     fn metadata(&self) -> Result<PdfMetadata>;
     fn pages(&self) -> Result<Vec<PageInfo>>;
@@ -153,6 +154,126 @@ impl PdfBackend for NoPdf {
     }
     fn name(&self) -> &'static str {
         "none"
+    }
+}
+
+// ------------------------------------------------------------------ open documents
+
+/// One document in a [`DocCache`]: the document behind a mutex and its page list once read.
+pub struct OpenDoc {
+    path: PathBuf,
+    size: u64,
+    mtime: f64,
+    doc: Mutex<Box<dyn PdfDoc>>,
+    pages: Mutex<Option<Arc<Vec<PageInfo>>>>,
+}
+
+impl OpenDoc {
+    /// The document. Hold the guard for one call or a short run of calls.
+    pub fn doc(&self) -> MutexGuard<'_, Box<dyn PdfDoc>> {
+        self.doc.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Size and rotation of every page, read on first use and kept with the entry. Walking
+    /// the pages loads each one, about a millisecond a page with pdfium.
+    pub fn pages(&self) -> Result<Arc<Vec<PageInfo>>> {
+        let mut slot = self.pages.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(p) = slot.as_ref() {
+            return Ok(p.clone());
+        }
+        let pages = Arc::new(self.doc().pages()?);
+        *slot = Some(pages.clone());
+        Ok(pages)
+    }
+
+    fn matches(&self, path: &Path, size: u64, mtime: f64) -> bool {
+        self.path == path && self.size == size && self.mtime == mtime
+    }
+}
+
+/// Documents kept open for reading, so a viewer that asks for one page after another opens
+/// the file once. An entry is keyed by the path, size and modification time of the file: a
+/// file another program changed opens again, and Kurasi's own writes call [`DocCache::forget`]
+/// after the save. At most `capacity` documents stay open; the one used longest ago closes
+/// first. A cached document holds no handle on the file (both backends read it into memory).
+pub struct DocCache {
+    capacity: usize,
+    slots: Mutex<Vec<Arc<OpenDoc>>>,
+    /// Taken while a missing document opens, so two requests that miss at once open it once.
+    opening: Mutex<()>,
+}
+
+impl DocCache {
+    pub fn new(capacity: usize) -> DocCache {
+        DocCache { capacity: capacity.max(1), slots: Mutex::new(Vec::new()), opening: Mutex::new(()) }
+    }
+
+    fn slots(&self) -> MutexGuard<'_, Vec<Arc<OpenDoc>>> {
+        self.slots.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The entry for the file as it is on disk now, moved to the front. Entries of an older
+    /// version of the same file are taken out and returned in `stale`.
+    fn lookup(&self, path: &Path, size: u64, mtime: f64, stale: &mut Vec<Arc<OpenDoc>>) -> Option<Arc<OpenDoc>> {
+        let mut slots = self.slots();
+        if let Some(i) = slots.iter().position(|d| d.matches(path, size, mtime)) {
+            let d = slots.remove(i);
+            slots.insert(0, d.clone());
+            return Some(d);
+        }
+        let (old, keep): (Vec<_>, Vec<_>) = slots.drain(..).partition(|d| d.path == path);
+        *slots = keep;
+        stale.extend(old);
+        None
+    }
+
+    /// The open document for `path`, opened with `backend` when the cache has no entry for
+    /// the file as it is on disk now.
+    pub fn get(&self, backend: &dyn PdfBackend, path: &Path) -> Result<Arc<OpenDoc>> {
+        let meta = std::fs::metadata(path)?;
+        let (size, mtime) = (meta.len(), crate::util::mtime_secs(&meta));
+        // Documents leave the cache through `closed` and close after every lock is released.
+        let mut closed: Vec<Arc<OpenDoc>> = Vec::new();
+        if let Some(d) = self.lookup(path, size, mtime, &mut closed) {
+            return Ok(d);
+        }
+        let _opening = self.opening.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(d) = self.lookup(path, size, mtime, &mut closed) {
+            return Ok(d);
+        }
+        // Opened outside the slot lock, so pages of other files keep coming from the cache.
+        let doc = backend.open(path)?;
+        let entry = Arc::new(OpenDoc { path: path.to_path_buf(), size, mtime, doc: Mutex::new(doc), pages: Mutex::new(None) });
+        {
+            let mut slots = self.slots();
+            slots.insert(0, entry.clone());
+            while slots.len() > self.capacity {
+                closed.extend(slots.pop());
+            }
+        }
+        drop(_opening);
+        drop(closed);
+        Ok(entry)
+    }
+
+    /// Drops the entry of `path`, after Kurasi saved the file.
+    pub fn forget(&self, path: &Path) {
+        let gone: Vec<Arc<OpenDoc>> = {
+            let mut slots = self.slots();
+            let (gone, keep): (Vec<_>, Vec<_>) = slots.drain(..).partition(|d| d.path == path);
+            *slots = keep;
+            gone
+        };
+        drop(gone);
+    }
+
+    /// Number of open documents.
+    pub fn len(&self) -> usize {
+        self.slots().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 

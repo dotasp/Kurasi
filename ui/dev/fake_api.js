@@ -245,7 +245,7 @@ function stateRec(){const P=cur();const list=projectList();
  if(Q.get('missing')==='1')list.push({id:'p-'+hex12('thesis'),name:'Thesis reading',folder:'E:\\Thesis\\Reading',created:'2026-09-01T08:00:00',last_opened:'2026-10-17T07:00:00'});
  const tags=new Set();if(P)liveHl(P).forEach(h=>h.tags.forEach(t=>tags.add(t)));const authors=new Set();if(P)liveRefs(P).forEach(r=>r.authors.forEach(a=>authors.add(a)));
  return {project:P?{...P.project,file_types:P.project.file_types,exclude:P.project.exclude}:null,projects:list,settings:P?{...P.settings,name:P.project.name,folder:P.project.folder,file_types:P.project.file_types,exclude:P.project.exclude,auto_scan_min:P.project.auto_scan_min,read_only:P.project.read_only,last_scan:P.project.last_scan}:{},
-  counts:P?{references:liveRefs(P).length,authors:authors.size,tags:tags.size,highlights:liveHl(P).length}:{references:0,authors:0,tags:0,highlights:0},change_seq:P?P.seq:0,demo:!!(P&&P.demo),previous_project_id:prevId,version:'0.4.0',
+  counts:P?{references:liveRefs(P).length,authors:authors.size,tags:tags.size,highlights:liveHl(P).length}:{references:0,authors:0,tags:0,highlights:0},change_seq:P?P.seq:0,demo:!!(P&&P.demo),previous_project_id:prevId,version:'0.4.1',
   startup:{opened_last:!!P&&Q.get('fresh')!=='1',folder_missing:Q.get('missing')==='1'&&!P,missing_name:Q.get('missing')==='1'?'Thesis reading':null,missing_folder:Q.get('missing')==='1'?'E:\\Thesis\\Reading':null}};}
 
 /* ---------- routes ---------- */

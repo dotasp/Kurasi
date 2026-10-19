@@ -18,6 +18,7 @@ use kurasi_core::error::Error as CoreError;
 use kurasi_core::model::{Changes, HighlightFilter, HighlightPatch, NewHighlight, Origin, Reference, ReferenceFilter, ReferencePatch, Writer};
 use kurasi_core::Project;
 use serde_json::{json, Map, Value};
+use tokio::sync::{Semaphore, SemaphorePermit};
 use tower::ServiceBuilder;
 use tower_http::compression::predicate::{Predicate, SizeAbove};
 use tower_http::compression::{CompressionLayer, CompressionLevel};
@@ -32,6 +33,19 @@ const LONG_POLL_DEFAULT: u64 = 25;
 const LONG_POLL_MAX: u64 = 60;
 
 type App = Arc<Workspace>;
+
+/// PDF page requests (`/info`, `/page/<n>.png`, `/page/<n>/words`) that may do PDF work at
+/// once. pdfium runs one call at a time, so the second permit only keeps the next request
+/// ready. The wait is part of the request future: a request whose client went away while it
+/// waits (the viewer aborts pages that left the view) is dropped before any PDF work, so a
+/// fast scroll through a long PDF leaves no queue of stale renders behind it.
+pub const PAGE_PERMITS: usize = 2;
+static PAGE_GATE: Semaphore = Semaphore::const_new(PAGE_PERMITS);
+
+/// A page permit, moved into the blocking task so it is held until the PDF work ends.
+async fn page_permit() -> Option<SemaphorePermit<'static>> {
+    PAGE_GATE.acquire().await.ok()
+}
 
 // ------------------------------------------------------------------ errors
 
@@ -428,7 +442,11 @@ async fn tags(State(ws): State<App>) -> ApiResult<Response> {
 // ------------------------------------------------------------------ files
 
 async fn file_info(State(ws): State<App>, AxPath(id): AxPath<String>) -> ApiResult<Response> {
-    let out = with_project!(ws, p => p.file_info(&id))?;
+    let permit = page_permit().await;
+    let out = with_project!(ws, p => {
+        let _permit = permit;
+        p.file_info(&id)
+    })?;
     ok_json(out)
 }
 
@@ -448,12 +466,20 @@ async fn page_png(
         None => 1.5,
         Some(s) => s.trim().parse::<f64>().map_err(|_| bad("scale must be a number such as 1.5."))?,
     };
-    let png = with_project!(ws, p => p.render_page(&id, n, scale))?;
+    let permit = page_permit().await;
+    let png = with_project!(ws, p => {
+        let _permit = permit;
+        p.render_page(&id, n, scale)
+    })?;
     Ok(raw(png, "image/png", "private, max-age=300"))
 }
 
 async fn page_words(State(ws): State<App>, AxPath((id, n)): AxPath<(String, usize)>) -> ApiResult<Response> {
-    let out = with_project!(ws, p => p.page_words(&id, n))?;
+    let permit = page_permit().await;
+    let out = with_project!(ws, p => {
+        let _permit = permit;
+        p.page_words(&id, n)
+    })?;
     ok_json(out)
 }
 

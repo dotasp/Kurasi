@@ -134,13 +134,50 @@ impl Project {
 split at JavaScript whitespace (`\s`), words are runs of `\p{L}`, `\p{N}` and the hyphen, and
 bigrams are pairs of UTF-16 code units.
 
+PDF reads (`crates/kurasi-core/src/pdf.rs`). `PdfDoc` is `Send`, so an open document can wait
+between two requests. Each `Project` keeps a `DocCache` of three documents for its read routes
+(`file_info`, `render_page`, `page_words`, `page_text`). A viewer that asks for one page after
+another opens the file once and reads the size and rotation of every page once. Opening a large
+PDF and walking its pages costs about half a second, so a cache miss on every page request
+made a 400-page file take tens of seconds per page while the viewer queued requests.
+
+```rust
+pub trait PdfDoc: Send { /* page_count, metadata, pages, render_png, words, annotations, writes */ }
+
+/// Documents kept open for reading. An entry is keyed by the path, size and modification time
+/// of the file, so a file another program changed opens again. Kurasi's own writes call
+/// `forget` after the save. At most `capacity` documents stay open; the one used longest ago
+/// closes first.
+pub struct DocCache { /* Mutex<Vec<Arc<OpenDoc>>> */ }
+impl DocCache {
+    pub fn new(capacity: usize) -> DocCache;
+    pub fn get(&self, backend: &dyn PdfBackend, path: &Path) -> Result<Arc<OpenDoc>>;
+    pub fn forget(&self, path: &Path);
+    pub fn len(&self) -> usize;
+}
+/// One cached document: the document behind a Mutex and its page list once read.
+pub struct OpenDoc { /* … */ }
+impl OpenDoc {
+    pub fn doc(&self) -> MutexGuard<'_, Box<dyn PdfDoc>>;
+    /// Size and rotation of every page, read on first use and kept with the entry.
+    pub fn pages(&self) -> Result<Arc<Vec<PageInfo>>>;
+}
+```
+
+Writes (highlights, rotation, restore) still open a document of their own, save it, and then
+call `forget` for the path.
+
 PDF work is in `kurasi-pdf` (`crates/kurasi-pdf`):
 
 ```rust
 pub struct Pdfium;                          // loads pdfium.dll from the exe folder, then resources/
 pub fn open(path: &Path) -> Result<Doc>;
+/// Every call holds the process-wide pdfium lock, and so does dropping a Doc
+/// (FPDF_CloseDocument), so a document closed on one thread never runs beside pdfium work on another.
 impl Doc {
     pub fn page_count(&self) -> usize;
+    pub fn page_info(&self, page: usize) -> Result<PageInfo>;               // unrotated size and /Rotate
+    pub fn page_infos(&self) -> Result<Vec<PageInfo>>;                      // every page, one hold of the lock
     pub fn render_png(&self, page: usize, dpi: u32) -> Result<Vec<u8>>;
     pub fn thumbnail_png(&self, width_px: u32) -> Result<Vec<u8>>;            // first page, portrait box
     pub fn words(&self, page: usize) -> Result<Vec<Word>>;                    // text + bbox in PDF points
@@ -163,6 +200,10 @@ depends on both and exposes:
 /// Db only after in-flight requests finish, as the Python build does).
 /// JSON and text bodies of 1 KB or more are gzip-compressed (tower-http) when the request
 /// accepts gzip; page images, thumbnails and other binary bodies are sent as they are.
+/// The PDF page routes (`/info`, `/page/<n>.png`, `/page/<n>/words`) wait for one of two
+/// permits (`PAGE_PERMITS`) before they start pdfium work, in arrival order. A request whose
+/// client has gone while it waits (the viewer aborts pages that left the view) is dropped
+/// before it renders.
 pub async fn serve(paths: AppPaths, project: Option<Project>, bind: Option<u16>) -> Result<(std::net::SocketAddr, ServerHandle)>;
 /// Sterile sample project (CONTRACT.md section 9), created under `paths`; idempotent reset.
 /// Lives in kurasi-core: `kurasi_core::demo::build(&AppPaths) -> Result<ProjectInfo>`.

@@ -4,6 +4,20 @@ All notable changes to Kurasi are recorded in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the version numbers follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-10-19
+
+### Fixed
+
+- Long PDFs render every page. In a PDF of a few hundred pages, pages from about page 24
+  onwards stayed blank for up to a minute, because every page request opened the whole file
+  again and the requests waited in one queue. Kurasi now keeps the three most recently used
+  PDFs open and renders at most two pages at a time.
+- The viewer cancels the requests of pages that leave the view, so the pages you stop on
+  render first.
+- A long PDF opens faster and uses less memory.
+- A page image goes to the render cache after the page is shown, and a cached image that was
+  cut short is rendered again.
+
 ## [0.4.0] - 2026-10-18
 
 ### Added

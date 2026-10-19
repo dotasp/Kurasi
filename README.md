@@ -3,7 +3,7 @@
 Kurasi is a personal reference-curation tool for Windows 10 (version 1809 or later) and
 Windows 11, 64-bit. It scans a project folder, shows the files as a catalogue, lets you highlight
 PDFs, Markdown notes and images with an analysis per highlight, and gives an AI agent the same
-catalogue through an MCP server. Version 0.4.0 is a Rust workspace with a Tauri 2 window.
+catalogue through an MCP server. Version 0.4.1 is a Rust workspace with a Tauri 2 window.
 `docs\CONTRACT.md` sets the behaviour and `docs\CONTRACT_RUST.md` the stack; where they differ,
 `CONTRACT_RUST.md` wins. The earlier Python build is kept at git tag `python-v0.1`.
 
@@ -345,7 +345,7 @@ Set `KURASI_HOME` to a temporary folder for every test or manual run, so the rea
 ## Layout
 
 ```
-Cargo.toml              workspace, version 0.4.0
+Cargo.toml              workspace, version 0.4.1
 CHANGELOG.md            what changed in each version
 LICENSE                 MIT License
 crates\kurasi-core\     config and app paths, SQLite schema, scanner, search, sidecar, media,

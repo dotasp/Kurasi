@@ -3,7 +3,7 @@
 Kurasi is a personal reference-curation tool for Windows 10 and 11: it scans a project folder,
 shows the files as a catalogue, highlights PDFs, Markdown and images, and exposes the catalogue
 to an AI agent through an MCP server. Since 18 Oct 2026 the product is the Rust workspace with
-Tauri 2 (version 0.4.0). The Python build is kept for reference only, as git tag `python-v0.1`;
+Tauri 2 (version 0.4.1). The Python build is kept for reference only, as the local git tag `python-v0.1`;
 its files are gone from the working tree. `README.md` describes the Rust build.
 
 ## Read first
@@ -50,8 +50,10 @@ The user registers the MCP server with
 
 `ui\dev\mcp_client.py` starts the server with `--mode write`, the default of `kurasi.exe mcp`; the integration run calls `highlight_add`, a write tool.
 
-## State on 18 Oct 2026
+## State on 19 Oct 2026
 
-- Tag `v0.4.0`: 119 workspace tests pass, 66 UI screenshots pass. The last integration run (113 of 113) came before the search chips and the Projects dialog; integration runs need the user's approval each time.
-- Open: installer wizard test by the user (parity item 7); the user re-registers the MCP server with `--mode write`. The Python code was removed on the user's request on 18 Oct 2026; `.venv` stays for PyMuPDF cross-checks, `ui\dev\pdfcheck.py` and `ui\dev\mcp_client.py`.
+- Tag `v0.4.1` (GitHub Release with the Setup exe and the portable zip) fixes long PDFs: Kurasi keeps the three most recently used PDFs open, renders at most two pages at a time, and the viewer cancels requests for pages that leave the view. On the fix, 125 workspace tests passed and the screenshot run wrote 67 shots; those runs came before the move to the public history, and the 0.4.1 commit itself was built without a test run at the user's request. The last integration run (113 of 113) came before the search chips and the Projects dialog; integration runs need the user's approval each time.
+- Public repo https://github.com/dotasp/Kurasi starts at the orphan commit `4fec814` "Kurasi 0.4.0" (tag `v0.4.0`), a scrubbed copy of the private 0.4.0; `main` tracks `origin/main`. The old history stays on this PC: branch `private-history` at `529331c`, tags `private-v0.4.0` and `python-v0.1`. The user chose to keep them off GitHub.
+- The demo sterility word list is `crates\kurasi-core\tests\forbidden_words.local.txt`, gitignored and kept on this PC only. `demo_tests` skips the word check when the file is absent.
+- Open: installer wizard test by the user (parity item 7); the user re-registers the MCP server with `--mode write`; the user replaces the portable copy in `Documents` with 0.4.1. The Python code was removed on the user's request on 18 Oct 2026; `.venv` stays for PyMuPDF cross-checks, `ui\dev\pdfcheck.py` and `ui\dev\mcp_client.py`.
 - Known defects: annotations without `/NM` get object-number ids that a later save may renumber; the graph toolbar overlays the top-left of the canvas.

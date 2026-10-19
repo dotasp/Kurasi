@@ -207,13 +207,8 @@ impl PdfDoc for PdfiumDoc {
     }
 
     fn pages(&self) -> CoreResult<Vec<CorePageInfo>> {
-        let doc = self.doc();
-        (0..doc.page_count())
-            .map(|i| {
-                let p = doc.page_info(i).map_err(core_err)?;
-                Ok(CorePageInfo { width: p.width as f64, height: p.height as f64, rotation: p.rotation })
-            })
-            .collect()
+        let infos = self.doc().page_infos().map_err(core_err)?;
+        Ok(infos.into_iter().map(|p| CorePageInfo { width: p.width as f64, height: p.height as f64, rotation: p.rotation }).collect())
     }
 
     fn render_png(&self, page: usize, scale: f64) -> CoreResult<Vec<u8>> {

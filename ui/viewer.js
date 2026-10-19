@@ -16,7 +16,7 @@ function getViewer(r){const f=docFile(r);let v=V.get(r.id);if(v&&v.fileId===(f?f
  const ext=String((f&&f.ext)||r.ext||'').toLowerCase();
  v={id:r.id,fileId:f?f.id:null,file:f,ext,kind:ext==='pdf'?'pdf':ext==='md'?'md':isImgExt(ext)?'img':'other',z:1,tool:'select',mdRaw:false,sel:null,pages:[],ver:0,io:null};v.avail=!!(f&&!f.cloud_only&&!f.missing&&v.kind!=='other');
  v.el=buildViewer(r,v);v.el._viewer=v;V.set(r.id,v);return v;}
-function disposeViewer(id){const v=V.get(id);if(!v)return;if(v.io)v.io.disconnect();v.pages.forEach(pg=>{if(pg.url)URL.revokeObjectURL(pg.url);});if(v.imgUrl)URL.revokeObjectURL(v.imgUrl);V.delete(id);}
+function disposeViewer(id){const v=V.get(id);if(!v)return;if(v.io)v.io.disconnect();v.pages.forEach(pg=>{pg.tok=(pg.tok||0)+1;abortPage(pg);if(pg.url)URL.revokeObjectURL(pg.url);});if(v.imgUrl)URL.revokeObjectURL(v.imgUrl);V.delete(id);}
 function buildViewer(r,v){const tb=el('div',{class:'vtb'});v.tb=tb;const sep=()=>el('span',{class:'vsep'});
  if(v.avail){[['select','Select','Click a highlight to select it'],['hl','Highlight',v.kind==='md'?'Select text with the mouse, then describe it':'Drag across words for a text highlight, or from an empty spot for a region'],['hand','Hand','Drag to pan']].forEach(([k,l,t])=>tb.append(el('button',{class:'tool','data-tool':k,title:t,onclick:()=>setTool(v,k)},l)));
  tb.append(sep(),el('button',{class:'tool',title:'Zoom out (Ctrl + wheel)',onclick:()=>zoomBy(v,1/1.15)},'−'),el('span',{class:'pg','data-z':''},'100%'),el('button',{class:'tool',title:'Zoom in (Ctrl + wheel)',onclick:()=>zoomBy(v,1.15)},'+'),el('button',{class:'tool',title:'Zoom so the page fills the width',onclick:()=>fitWidth(v)},'Fit width'),sep());
@@ -73,14 +73,20 @@ function setupPdf(r,v,info){const sizes=Array.isArray(info.page_sizes)?info.page
  renderHls(r,v);updateTb(v);if(S.tour.on)requestAnimationFrame(positionTour);}
 const sizePage=(v,pg)=>sizeBox(pg.box,pg.layer,pg.w,pg.h,pg.rot,v.z);
 function scaleFor(v){const s=v.z*(window.devicePixelRatio||1);return Math.min(6,Math.max(0.5,Math.ceil(s*4)/4));}
+/* Each page request carries an AbortController (pg.ctl for the image, pg.wctl for the words). A page that leaves the
+   IntersectionObserver band aborts both, so the server drops them before rendering and a fast scroll leaves no queue. */
 function ensurePage(v,pg){if(!V.has(v.id))return;
- if(!pg.words&&!pg.wordsBusy){pg.wordsBusy=true;GET(`/api/file/${enc(v.fileId)}/page/${pg.n}/words`).then(w=>{pg.words=normWords(w,pg);pg.wordsBusy=false;if(pg.visible)drawWords(pg);}).catch(()=>{pg.wordsBusy=false;pg.words={w:pg.w,h:pg.h,list:[]};});}
+ if(!pg.words&&!pg.wordsBusy){pg.wordsBusy=true;const wc=pg.wctl=new AbortController();
+  GET(`/api/file/${enc(v.fileId)}/page/${pg.n}/words`,wc.signal).then(w=>{if(pg.wctl!==wc)return;pg.wctl=null;pg.words=normWords(w,pg);pg.wordsBusy=false;if(pg.visible)drawWords(pg);})
+  .catch(()=>{if(pg.wctl!==wc)return;pg.wctl=null;pg.wordsBusy=false;pg.words={w:pg.w,h:pg.h,list:[]};});}
  else if(pg.words&&!pg.wordsDrawn)drawWords(pg);
  const s=scaleFor(v);if(pg.loaded===s&&pg.ver===v.ver||pg.busy===s&&pg.reqVer===v.ver)return;pg.busy=s;const ver=v.ver;pg.reqVer=ver;const tok=pg.tok=(pg.tok||0)+1;
- apiBlob(`/api/file/${enc(v.fileId)}/page/${pg.n}.png?scale=${s}&v=${ver}r${pg.rot}`).then(b=>{if(pg.tok!==tok)return;pg.busy=0;if(v.ver!==ver||!V.has(v.id)||!pg.visible)return;
+ if(pg.ctl)pg.ctl.abort();const ctl=pg.ctl=new AbortController();
+ apiBlob(`/api/file/${enc(v.fileId)}/page/${pg.n}.png?scale=${s}&v=${ver}r${pg.rot}`,ctl.signal).then(b=>{if(pg.tok!==tok)return;pg.ctl=null;pg.busy=0;if(v.ver!==ver||!V.has(v.id)||!pg.visible)return;
   const url=URL.createObjectURL(b);const old=pg.url;pg.url=url;pg.img.onload=()=>{if(old&&old!==pg.url)URL.revokeObjectURL(old);};pg.img.src=url;pg.img.hidden=false;pg.ld.hidden=true;pg.loaded=s;pg.ver=ver;})
- .catch(e=>{if(pg.tok!==tok)return;pg.busy=0;pg.ld.hidden=false;pg.ld.textContent=`Page ${pg.n} could not be drawn. ${e.message}`;});}
-function unloadPage(pg){pg.visible=false;pg.tok=(pg.tok||0)+1;if(pg.url){pg.img.removeAttribute('src');URL.revokeObjectURL(pg.url);pg.url=null;}pg.img.hidden=true;pg.ld.hidden=false;pg.loaded=0;pg.busy=0;if(pg.wordsDrawn){pg.wordsEl.innerHTML='';pg.wordsDrawn=false;}}
+ .catch(e=>{if(pg.tok!==tok)return;pg.ctl=null;pg.busy=0;pg.ld.hidden=false;pg.ld.textContent=`Page ${pg.n} could not be drawn. ${e.message}`;});}
+function abortPage(pg){if(pg.ctl){pg.ctl.abort();pg.ctl=null;}if(pg.wctl){pg.wctl.abort();pg.wctl=null;pg.wordsBusy=false;}}
+function unloadPage(pg){pg.visible=false;pg.tok=(pg.tok||0)+1;abortPage(pg);if(pg.url){pg.img.removeAttribute('src');URL.revokeObjectURL(pg.url);pg.url=null;}pg.img.hidden=true;pg.ld.hidden=false;pg.loaded=0;pg.busy=0;if(pg.wordsDrawn){pg.wordsEl.innerHTML='';pg.wordsDrawn=false;}}
 function normWords(w,pg){const list=(w&&Array.isArray(w.words)?w.words:[]).filter(x=>Array.isArray(x)&&x.length>=5).map(x=>[+x[0],+x[1],+x[2],+x[3],String(x[4])]);return {w:+(w&&w.width)||pg.w,h:+(w&&w.height)||pg.h,list};}
 function drawWords(pg){const W=pg.words;pg.wordsEl.innerHTML='';const frag=document.createDocumentFragment();W.list.forEach((x,i)=>{const s=document.createElement('span');s.style.cssText=`left:${x[0]/W.w*100}%;top:${x[1]/W.h*100}%;width:${(x[2]-x[0])/W.w*100}%;height:${(x[3]-x[1])/W.h*100}%`;s.dataset.i=i;frag.append(s);});pg.wordsEl.append(frag);pg.wordsDrawn=true;}
 /* word under a point; with nearest, the closest word on the same line */

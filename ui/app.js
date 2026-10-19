@@ -36,18 +36,19 @@ function fmtWhen(v){if(v==null||v==='')return '';const d=typeof v==='number'?new
 /* ---------- API client ---------- */
 class ApiError extends Error{constructor(msg,status){super(msg);this.status=status;}}
 const NO_SERVER='Kurasi cannot reach its server. Check that the Kurasi window is still open, then try again.';
-async function api(method,path,body){
-  const opt={method,headers:{}};
+async function api(method,path,body,signal){
+  const opt={method,headers:{}};if(signal)opt.signal=signal;
   if(body!==undefined){opt.headers['Content-Type']='application/json';opt.body=JSON.stringify(body);}
-  let res;try{res=await fetch(path,opt);}catch(e){throw new ApiError(NO_SERVER,0);}
+  let res;try{res=await fetch(path,opt);}catch(e){if(e&&e.name==='AbortError')throw e;throw new ApiError(NO_SERVER,0);}
   let data=null;const ct=res.headers.get('content-type')||'';
   try{data=ct.includes('json')?await res.json():await res.text();}catch(e){data=null;}
   if(!res.ok){const m=data&&typeof data==='object'&&data.error?String(data.error):`The server answered ${res.status} to ${method} ${path.split('?')[0]}. Try again; restart Kurasi if it repeats.`;throw new ApiError(m,res.status);}
   return data;}
-const GET=p=>api('GET',p), POST=(p,b)=>api('POST',p,b===undefined?{}:b), PUT=(p,b)=>api('PUT',p,b===undefined?{}:b), DEL=p=>api('DELETE',p);
-async function apiRaw(path){let res;try{res=await fetch(path);}catch(e){throw new ApiError(NO_SERVER,0);}
+/* signal: an AbortController signal; an aborted request rejects with the AbortError itself */
+const GET=(p,signal)=>api('GET',p,undefined,signal), POST=(p,b)=>api('POST',p,b===undefined?{}:b), PUT=(p,b)=>api('PUT',p,b===undefined?{}:b), DEL=p=>api('DELETE',p);
+async function apiRaw(path,signal){let res;try{res=await fetch(path,signal?{signal}:undefined);}catch(e){if(e&&e.name==='AbortError')throw e;throw new ApiError(NO_SERVER,0);}
   if(!res.ok){let m=`The server answered ${res.status} for this file.`;try{const j=await res.clone().json();if(j&&j.error)m=String(j.error);}catch(e){}throw new ApiError(m,res.status);}return res;}
-const apiBlob=async p=>(await apiRaw(p)).blob();
+const apiBlob=async(p,signal)=>(await apiRaw(p,signal)).blob();
 const apiText=async p=>(await apiRaw(p)).text();
 function fail(e){console.warn(e);toast(e&&e.message?e.message:String(e),{err:true,ms:9000});}
 

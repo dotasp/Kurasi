@@ -14,7 +14,7 @@ pub mod workspace;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-pub use api::build_app;
+pub use api::{build_app, PAGE_PERMITS};
 pub use error::{Error, Result};
 pub use mcp::{mcp_stdio, KurasiMcp, Mode, Tools, RESOURCES, TOOLS};
 pub use scan::ScanRunner;

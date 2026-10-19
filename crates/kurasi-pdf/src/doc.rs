@@ -1,6 +1,7 @@
 //! `Doc`: one opened PDF with the read and write operations of CORE_API.md.
 
 use std::io::Cursor;
+use std::mem::ManuallyDrop;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
@@ -59,7 +60,7 @@ pub fn open(path: &Path) -> Result<Doc> {
     let bytes = std::fs::read(path)?;
     let _guard = lock();
     let pdf = load_bytes(bytes)?;
-    Ok(Doc { path: path.to_path_buf(), pdf, pending: Vec::new(), names: None, saved: None })
+    Ok(Doc { path: path.to_path_buf(), pdf: ManuallyDrop::new(pdf), pending: Vec::new(), names: None, saved: None })
 }
 
 fn load_bytes(bytes: Vec<u8>) -> Result<PdfDocument<'static>> {
@@ -71,7 +72,9 @@ fn load_bytes(bytes: Vec<u8>) -> Result<PdfDocument<'static>> {
 /// until `save_in_place`.
 pub struct Doc {
     path: PathBuf,
-    pdf: PdfDocument<'static>,
+    /// Closed in `Drop` under the pdfium lock: `FPDF_CloseDocument` must never run beside
+    /// pdfium work on another thread, and a cached document may close on any request thread.
+    pdf: ManuallyDrop<PdfDocument<'static>>,
     /// Field writes applied with lopdf after pdfium saves.
     pending: Vec<Patch>,
     /// Mirror of each page's /Annots order with the /NM of every entry, kept in step with
@@ -414,11 +417,20 @@ impl Doc {
             let _ = std::fs::remove_file(&tmp);
             return Err(e);
         }
-        self.pdf = check;
+        // The old document closes here, under the lock `save_in_place` holds.
+        *self.pdf = check;
         self.pending.clear();
         self.names = None;
         self.saved = Some(parsed);
         Ok(())
+    }
+}
+
+impl Drop for Doc {
+    fn drop(&mut self) {
+        let _g = lock();
+        // SAFETY: `pdf` is never used again; `Drop` runs once.
+        unsafe { ManuallyDrop::drop(&mut self.pdf) };
     }
 }
 
@@ -433,6 +445,13 @@ impl Doc {
     pub fn page_info(&self, page: usize) -> Result<PageInfo> {
         let _g = lock();
         self.page_info_(page)
+    }
+
+    /// Unrotated size and /Rotate of every page, under one hold of the lock, so a walk over a
+    /// long document is never interleaved with page requests of other threads.
+    pub fn page_infos(&self) -> Result<Vec<PageInfo>> {
+        let _g = lock();
+        (0..self.page_count_()).map(|i| self.page_info_(i)).collect()
     }
 
     /// The document /Title and /Author, trimmed; empty when absent.

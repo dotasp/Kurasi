@@ -745,8 +745,8 @@ impl Project {
         let mut base = json!({"id": f.id, "ref_id": f.ref_id, "relpath": f.relpath, "ext": f.ext});
         let obj = base.as_object_mut().unwrap();
         if f.ext == "pdf" {
-            let doc = self.pdf().open(&path)?;
-            let pages = doc.pages()?;
+            let open = self.docs().get(self.pdf().as_ref(), &path)?;
+            let pages = open.pages()?;
             obj.insert("pages".into(), json!(pages.len()));
             obj.insert("page_sizes".into(), json!(pages.iter().map(|p| [round2(p.width), round2(p.height)]).collect::<Vec<_>>()));
             obj.insert("rotation".into(), json!(pages.iter().map(|p| p.rotation).collect::<Vec<_>>()));
@@ -779,8 +779,10 @@ impl Project {
             return Err(Error::bad("scale must be a number such as 1.5."));
         }
         let scale = (scale.clamp(0.25, 6.0) * 100.0).round() / 100.0;
-        let doc = self.pdf().open(&path)?;
-        let pages = doc.pages()?;
+        // The open document and its page list come from the cache, so a viewer scrolling
+        // through a long PDF pays for one open and one page walk per file version.
+        let open = self.docs().get(self.pdf().as_ref(), &path)?;
+        let pages = open.pages()?;
         if page_no == 0 || page_no > pages.len() {
             return Err(Error::not_found(format!("Page {} does not exist; the PDF has {} pages.", page_no, pages.len())));
         }
@@ -798,17 +800,14 @@ impl Project {
         };
         if let Some(c) = &cache {
             if let Ok(bytes) = std::fs::read(c) {
-                return Ok(bytes);
+                if whole_png(&bytes) {
+                    return Ok(bytes);
+                }
             }
         }
-        let png = doc.render_png(page_no, scale)?;
-        if let Some(c) = &cache {
-            if let Some(parent) = c.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            if let Err(e) = atomic_write_bytes(c, &png) {
-                log::warn!("page cache write failed for {}: {}", c.display(), e);
-            }
+        let png = open.doc().render_png(page_no, scale)?;
+        if let Some(c) = cache {
+            store_page(c, png.clone());
         }
         Ok(png)
     }
@@ -816,13 +815,13 @@ impl Project {
     /// `{width, height, rotation, words:[[x0,y0,x1,y1,"text"],...]}` in unrotated points.
     pub fn page_words(&self, fid: &str, page_no: usize) -> Result<Value> {
         let (_, path) = self.pdf_file(fid)?;
-        let doc = self.pdf().open(&path)?;
-        let pages = doc.pages()?;
+        let open = self.docs().get(self.pdf().as_ref(), &path)?;
+        let pages = open.pages()?;
         if page_no == 0 || page_no > pages.len() {
             return Err(Error::not_found(format!("Page {} does not exist; the PDF has {} pages.", page_no, pages.len())));
         }
         let p = &pages[page_no - 1];
-        let words = doc.words(page_no)?;
+        let words = open.doc().words(page_no)?;
         Ok(json!({
             "width": round2(p.width), "height": round2(p.height), "rotation": p.rotation,
             "words": words.iter().map(|w| json!([round2(w.x0), round2(w.y0), round2(w.x1), round2(w.y1), w.text])).collect::<Vec<_>>(),
@@ -832,8 +831,8 @@ impl Project {
     /// Page text of a PDF page, words joined by spaces.
     pub fn page_text(&self, fid: &str, page_no: usize) -> Result<String> {
         let (_, path) = self.pdf_file(fid)?;
-        let doc = self.pdf().open(&path)?;
-        let words = doc.words(page_no)?;
+        let open = self.docs().get(self.pdf().as_ref(), &path)?;
+        let words = open.doc().words(page_no)?;
         Ok(words.iter().map(|w| w.text.as_str()).collect::<Vec<_>>().join(" "))
     }
 
@@ -894,6 +893,7 @@ impl Project {
             let mut doc = self.pdf().open(&path)?;
             doc.rotate(page_no, delta)?;
             doc.save_in_place()?;
+            self.docs().forget(&path);
             let st = crate::util::file_stat(&path)?;
             self.db().tx(|c| {
                 Self::apply_stat(c, fid, &st)?;
@@ -1064,6 +1064,7 @@ impl Project {
                 created: None,
             })?;
             doc.save_in_place()?;
+            self.docs().forget(&path);
             let st = crate::util::file_stat(&path)?;
             row.page = Some(page as i64);
             row.kind = kind;
@@ -1176,6 +1177,7 @@ impl Project {
         let mut doc = self.pdf().open(&path)?;
         doc.update_highlight(xref, &AnnotPatch { contents: Some(pdf::compose(analysis, tags)), author: None, colour: None })?;
         doc.save_in_place()?;
+        self.docs().forget(&path);
         crate::util::file_stat(&path)
     }
 
@@ -1268,6 +1270,7 @@ impl Project {
                     match doc.delete_highlight(xref) {
                         Ok(snaps) => {
                             doc.save_in_place()?;
+                            self.docs().forget(&path);
                             let stat = crate::util::file_stat(&path)?;
                             payload["snapshots"] = serde_json::to_value(&snaps)?;
                             sha_before = f.sha256.clone();
@@ -1343,6 +1346,7 @@ impl Project {
                 let mut doc = self.pdf().open(&path)?;
                 let mapping = doc.restore_annotations(&snaps)?;
                 doc.save_in_place()?;
+                self.docs().forget(&path);
                 st = Some(crate::util::file_stat(&path)?);
                 let old = h.pdf_xref.unwrap_or(snaps[0].xref);
                 h.pdf_xref = mapping.get(&old).or_else(|| mapping.get(&snaps[0].xref)).copied();
@@ -2013,6 +2017,36 @@ pub fn hl_record(row: &HlRow) -> Highlight {
     }
 }
 
+/// `true` when `bytes` hold a PNG from its signature to its IEND chunk. A page render cut
+/// short (the cache skips the flush to disk) is rendered again.
+fn whole_png(bytes: &[u8]) -> bool {
+    const SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+    const IEND: &[u8] = b"IEND\xaeB`\x82";
+    bytes.len() > SIGNATURE.len() + IEND.len() && bytes.starts_with(SIGNATURE) && bytes.ends_with(IEND)
+}
+
+/// Writes a page render into the render cache on a thread of its own, so the answer never
+/// waits for the disk (a flushed write of a large render took 50 to 350 ms on Windows with an
+/// antivirus scanner). The cache is disposable: no flush, a temp name per writer, then a rename;
+/// a read checks the PNG is whole.
+fn store_page(path: PathBuf, png: Vec<u8>) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let write = move || {
+        let parent = path.parent().map(Path::to_path_buf).unwrap_or_default();
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let tmp = parent.join(format!(".~kurasi-{}.{}.tmp", name, SEQ.fetch_add(1, Ordering::Relaxed)));
+        let done = std::fs::create_dir_all(&parent).and_then(|_| std::fs::write(&tmp, &png)).and_then(|_| std::fs::rename(&tmp, &path));
+        if let Err(e) = done {
+            let _ = std::fs::remove_file(&tmp);
+            log::warn!("page cache write failed for {}: {}", path.display(), e);
+        }
+    };
+    if std::thread::Builder::new().name("kurasi-page-cache".into()).spawn(write).is_err() {
+        log::warn!("page cache writer could not start; the page renders again next time");
+    }
+}
+
 /// Deletes the oldest page renders until the cache is under the limit (500 MB).
 pub fn trim_page_cache(pages_dir: &Path, limit: u64) -> usize {
     let mut entries: Vec<(std::time::SystemTime, u64, PathBuf)> = Vec::new();
@@ -2046,4 +2080,19 @@ pub fn trim_page_cache(pages_dir: &Path, limit: u64) -> usize {
         }
     }
     removed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::whole_png;
+
+    #[test]
+    fn a_page_render_cut_short_is_no_cache_hit() {
+        let mut png = Vec::new();
+        image::DynamicImage::ImageRgb8(image::RgbImage::new(4, 4)).write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+        assert!(whole_png(&png));
+        assert!(!whole_png(&png[..png.len() - 3]));
+        assert!(!whole_png(&png[1..]));
+        assert!(!whole_png(b""));
+    }
 }

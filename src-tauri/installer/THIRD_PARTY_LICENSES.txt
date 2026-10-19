@@ -1,4 +1,4 @@
-Third-party licences for Kurasi 0.4.0
+Third-party licences for Kurasi 0.4.1
 
 Kurasi itself is under the MIT License (LICENSE.txt next to this file). kurasi.exe links the 373 Rust crates
 listed below. Each is used under the licence named in the second column; where a crate offers a

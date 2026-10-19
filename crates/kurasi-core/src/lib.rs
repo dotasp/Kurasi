@@ -38,6 +38,9 @@ pub use pdf::{NoPdf, PdfBackend, PdfDoc};
 
 pub type CloudCheck = Box<dyn Fn(&Path, &Metadata) -> bool + Send + Sync>;
 
+/// PDFs a project keeps open for its read routes (`pdf::DocCache`).
+pub const OPEN_DOCS: usize = 3;
+
 pub(crate) struct Inner {
     paths: AppPaths,
     id: String,
@@ -51,6 +54,8 @@ pub(crate) struct Inner {
     defer_sidecar: AtomicBool,
     cloud_check: RwLock<Option<CloudCheck>>,
     text_index: Mutex<Option<search::FullText>>,
+    /// PDFs kept open for the read routes (page images, words, page info).
+    docs: pdf::DocCache,
 }
 
 /// One opened project. Cheap to clone (Arc inside). Thread safe.
@@ -124,6 +129,7 @@ impl Project {
             defer_sidecar: AtomicBool::new(false),
             cloud_check: RwLock::new(None),
             text_index: Mutex::new(None),
+            docs: pdf::DocCache::new(OPEN_DOCS),
         };
         let project = Project { inner: Arc::new(inner) };
         {
@@ -169,6 +175,11 @@ impl Project {
 
     pub fn db(&self) -> &Db {
         &self.inner.db
+    }
+
+    /// The PDFs kept open for the read routes.
+    pub(crate) fn docs(&self) -> &pdf::DocCache {
+        &self.inner.docs
     }
 
     pub fn pdf(&self) -> &Arc<dyn PdfBackend> {

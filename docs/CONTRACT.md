@@ -12,7 +12,7 @@ holds:
 
 ```
 D:\PythonScripts\Kurasi\
-  Cargo.toml     Rust workspace, version 0.4.0
+  Cargo.toml     Rust workspace, version 0.4.1
   crates\        kurasi-core, kurasi-pdf, kurasi-server
   src-tauri\     kurasi.exe (CLI: app | mcp | scan | demo | export | serve), splash, window,
                  NSIS installer, build.ps1
@@ -41,7 +41,8 @@ D:\PythonScripts\Kurasi\
 - App data: `%LOCALAPPDATA%\Kurasi\`
   - `projects.json`: `[{id, name, folder, created, last_opened}]`
   - `projects\<id>\kurasi.sqlite` (WAL mode), `projects\<id>\write.lock`
-  - `thumbs\<sha256>.png`, `pages\<sha256>\p<n>_r<rot>_s<scale>.png` (render cache, trim to 500 MB oldest first)
+  - `thumbs\<sha256>.png`, `pages\<sha256>\p<n>_r<rot>_s<scale>.png` (render cache, trim to 500 MB oldest first; written
+    after the answer, and a cached file cut short renders again)
   - `demo\` (demo project files), `logs\kurasi.log`
   - `trash\projects\rm-<12 hex>\`: one folder per project removal with its data (section 6,
     `DELETE /api/projects/<id>?delete_data=1`). `removed.json` in it names the registry entry and
@@ -250,6 +251,13 @@ GET    /api/resolve?href=<link>&from=<fid>  {file_id, ref_id} when the link reso
 GET    /api/mcp                          {command, tools:[{name,description,mode}], resources:[...]}
 ```
 
+PDF page routes (`/info`, `/page/<n>.png`, `/page/<n>/words`): the server keeps the last three
+PDFs it read open between requests, with the size and rotation of every page read once per file
+version (path, size and modification time; Kurasi's own writes drop the entry). A page image
+comes from the render cache when it is there; a new render is answered first and written to the
+cache afterwards, without a flush to disk. At most two page requests do PDF work at a time, in
+arrival order; a request whose client has gone while it waits is dropped without rendering.
+
 Folder picker: inside the desktop window the page calls `window.__TAURI__.dialog.open({directory:
 true})` of tauri-plugin-dialog, the Windows select-folder dialog (capability `dialog:allow-open`,
 `CONTRACT_RUST.md` section 2). The chosen path then goes through `POST /api/project/check`. A
@@ -350,7 +358,9 @@ Rules:
 - Data comes from the API. No SAMPLE, POOL, MD or MCP_LOG constants remain in the shipped UI.
 - Scan dialog shows the real progress from `/api/scan/status`.
 - PDF viewer: continuous scroll over every page; each page an `<img>` from `/page/<n>.png` at
-  scale = zoom x devicePixelRatio, lazy-loaded with IntersectionObserver; word boxes from
+  scale = zoom x devicePixelRatio, lazy-loaded with IntersectionObserver (1200 px margin above
+  and below the view). A page that leaves that band aborts its image and word requests, so a
+  fast scroll or a jump through a long PDF leaves no queue behind it. Word boxes from
   `/words` placed as transparent spans for drag selection; highlight overlays drawn from quads,
   coloured by origin; rotation from the server. Ctrl + wheel zoom, Fit width, Hand pan,
   right-click page menu for rotate one page or all pages.
